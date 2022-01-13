@@ -1,5 +1,8 @@
 # testexec
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/brian14708/testexec)](https://goreportcard.com/report/github.com/brian14708/testexec)
+[![Go Reference](https://pkg.go.dev/badge/github.com/brian14708/testexec.svg)](https://pkg.go.dev/github.com/brian14708/testexec)
+
 Run subprocess tests for Go.
 
 ## How to use
