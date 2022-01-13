@@ -12,8 +12,11 @@ import (
 func decodeValues(v reflect.Value, r io.Reader) error {
 	if !v.IsValid() {
 		// discard value
-		io.Copy(ioutil.Discard, r)
-		return nil
+		_, err := io.Copy(ioutil.Discard, r)
+		if errors.Is(err, os.ErrClosed) {
+			return nil
+		}
+		return err
 	}
 
 	if v.Type().Kind() != reflect.Chan {

@@ -24,11 +24,11 @@ func CommandContext(t testing.TB, prg Program, ctx context.Context, req, resp in
 
 	cmd := prg.exec(ctx, req, resp, args)
 
-	cleanup(t, func() {
+	t.Cleanup(func() {
 		if cmd.Process != nil {
-			cmd.Process.Signal(syscall.SIGTERM)
+			_ = cmd.Process.Signal(syscall.SIGTERM)
 		}
-		cmd.Wait()
+		_ = cmd.Wait()
 	})
 	return cmd
 }
