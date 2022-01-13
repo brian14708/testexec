@@ -1,56 +1,46 @@
 package testexec
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"reflect"
 	"runtime"
-	"strings"
 	"syscall"
 	"testing"
 )
 
-type Program string
-
 var (
 	calledFromMain = false
-	programs       = map[string]func(*T, io.Reader, io.WriteCloser){}
+	programs       = make(map[string]program)
 )
 
-const (
-	envKey = "TESTEXEC_KEY"
-)
+const envKey = "TESTEXEC_KEY"
 
-func NewProgram(f interface{}, opts ...ProgramOption) Program {
+type ProgramHandle string
+
+type program struct {
+	fn      func(*T, io.Reader, io.WriteCloser)
+	options options
+}
+
+func NewProgram(f interface{}, opts ...ProgramOption) ProgramHandle {
 	if calledFromMain {
 		panic("should not call NewProgram after RunTestMain")
 	}
 
-	var opt options
+	var prg program
 	for _, o := range opts {
-		o(&opt)
-	}
-
-	var buf bytes.Buffer
-	{
-		w := base64.NewEncoder(base64.URLEncoding, &buf)
-		if err := json.NewEncoder(w).Encode(&opt); err != nil {
-			panic(fmt.Sprintf("failed to encode program options: %v", err))
-		}
-		w.Close()
+		o(&prg.options)
 	}
 
 	var key string
 	if _, file, line, ok := runtime.Caller(1); ok {
-		key = fmt.Sprintf("%d|%s|%s", line, file, buf.String())
+		key = fmt.Sprintf("%d|%s", line, file)
 	}
-	if key == "" || programs[key] != nil {
+	if _, ok := programs[key]; key == "" || ok {
 		panic(fmt.Sprintf("invalid exec_key = `%s'", key))
 	}
 
@@ -62,7 +52,7 @@ func NewProgram(f interface{}, opts ...ProgramOption) Program {
 	}
 
 	if typ.NumIn() == 1 {
-		programs[key] = func(t *T, _ io.Reader, _ io.WriteCloser) {
+		prg.fn = func(t *T, _ io.Reader, _ io.WriteCloser) {
 			reflect.ValueOf(f).Call([]reflect.Value{
 				reflect.ValueOf(t),
 			})
@@ -84,7 +74,7 @@ func NewProgram(f interface{}, opts ...ProgramOption) Program {
 			panic("response parameter must be channel or pointer")
 		}
 
-		programs[key] = func(t *T, in io.Reader, out io.WriteCloser) {
+		prg.fn = func(t *T, in io.Reader, out io.WriteCloser) {
 			inArg := reflect.New(inType).Elem()
 			switch inType.Kind() {
 			case reflect.Chan:
@@ -133,11 +123,12 @@ func NewProgram(f interface{}, opts ...ProgramOption) Program {
 			}
 		}
 	}
+	programs[key] = prg
 
-	return Program(key)
+	return ProgramHandle(key)
 }
 
-func (c Program) exec(ctx context.Context, request, response interface{}, args []string) *Cmd {
+func (c ProgramHandle) exec(ctx context.Context, request, response interface{}, args []string) *Cmd {
 	cmd := &Cmd{ctx: ctx}
 
 	if ctx != nil {
@@ -146,19 +137,19 @@ func (c Program) exec(ctx context.Context, request, response interface{}, args [
 		cmd.Cmd = exec.Command(os.Args[0], args...)
 	}
 
-	cmd.Env = append(os.Environ(), envKey+"="+string(c))
+	cmd.Cmd.Env = append(os.Environ(), envKey+"="+string(c))
 	if wd, err := os.Getwd(); err == nil {
-		cmd.Dir = wd
+		cmd.Cmd.Dir = wd
 	}
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	cmd.SysProcAttr = &syscall.SysProcAttr{
+	cmd.Cmd.Stderr = os.Stderr
+	cmd.Cmd.Stdout = os.Stdout
+	cmd.Cmd.SysProcAttr = &syscall.SysProcAttr{
 		Pdeathsig: syscall.SIGTERM,
 	}
 
 	inR, inW, _ := os.Pipe()
 	outR, outW, _ := os.Pipe()
-	cmd.ExtraFiles = []*os.File{inR, outW}
+	cmd.Cmd.ExtraFiles = []*os.File{inR, outW}
 	cmd.closers = append(cmd.closers, inR, inW, outR, outW)
 
 	cmd.wg.Go(func() error {
@@ -179,7 +170,7 @@ func (c Program) exec(ctx context.Context, request, response interface{}, args [
 	return cmd
 }
 
-func RunTestMain(m *testing.M) {
+func Main(m *testing.M) {
 	calledFromMain = true
 	if key := os.Getenv(envKey); key != "" {
 		inPipe := os.NewFile(uintptr(3), "")
@@ -187,23 +178,13 @@ func RunTestMain(m *testing.M) {
 		defer inPipe.Close()
 		defer outPipe.Close()
 
-		fn, ok := programs[key]
+		prg, ok := programs[key]
 		if !ok {
 			panic(fmt.Sprintf("program not found, exec_key = %s", key))
 		}
 
-		var opt options
-		{
-			idx := strings.LastIndexByte(key, '|')
-			r := strings.NewReader(key[idx+1:])
-			b := base64.NewDecoder(base64.URLEncoding, r)
-			if err := json.NewDecoder(b).Decode(&opt); err != nil {
-				panic(fmt.Sprintf("failed to decode program options: %v", err))
-			}
-		}
-
-		fn(&T{
-			Name: opt.Name,
+		prg.fn(&T{
+			name: prg.options.Name,
 		}, inPipe, outPipe)
 		return
 	}

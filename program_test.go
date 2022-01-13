@@ -7,7 +7,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	RunTestMain(m)
+	Main(m)
 }
 
 func TestEmbeddedProgram(t *testing.T) {

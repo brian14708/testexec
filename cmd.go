@@ -35,7 +35,7 @@ func (c *Cmd) Wait() error {
 }
 
 func (c *Cmd) Run() error {
-	if err := c.Start(); err != nil {
+	if err := c.Cmd.Start(); err != nil {
 		return err
 	}
 	return c.Wait()

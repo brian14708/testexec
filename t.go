@@ -6,14 +6,14 @@ import (
 )
 
 type T struct {
-	Name string
+	name string
 }
 
 func (t *T) Errorf(format string, args ...interface{}) {
-	if t.Name == "" {
+	if t.name == "" {
 		fmt.Print("[subprocess] ")
 	} else {
-		fmt.Printf("[subprocess %s] ", t.Name)
+		fmt.Printf("[subprocess %s] ", t.name)
 	}
 	fmt.Printf(format, args...)
 	fmt.Print("\n")
