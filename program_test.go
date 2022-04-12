@@ -12,7 +12,7 @@ func TestMain(m *testing.M) {
 
 func TestEmbeddedProgram(t *testing.T) {
 	assert.Panics(t, func() {
-		NewProgram(func(*T) {})
+		NewProgram(func(*T, Nil, Nil) {})
 	})
 }
 

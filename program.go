@@ -12,21 +12,24 @@ import (
 	"testing"
 )
 
+type Nil chan struct{ private struct{} }
+
 var (
 	calledFromMain = false
 	programs       = make(map[string]program)
+	nilChanType    = typeOf[Nil]()
 )
 
 const envKey = "TESTEXEC_KEY"
 
-type ProgramHandle string
+type ProgramHandle[In any, Out any] string
 
 type program struct {
 	fn      func(*T, io.Reader, io.WriteCloser)
 	options options
 }
 
-func NewProgram(f interface{}, opts ...ProgramOption) ProgramHandle {
+func NewProgram[In any, Out any](f func(*T, In, Out), opts ...ProgramOption) ProgramHandle[In, Out] {
 	if calledFromMain {
 		panic("should not call NewProgram after RunTestMain")
 	}
@@ -44,91 +47,77 @@ func NewProgram(f interface{}, opts ...ProgramOption) ProgramHandle {
 		panic(fmt.Sprintf("invalid exec_key = `%s'", key))
 	}
 
-	typ := reflect.TypeOf(f)
-	if typ.Kind() != reflect.Func ||
-		(typ.NumIn() != 3 && typ.NumIn() != 1) ||
-		typ.NumOut() != 0 {
-		panic("program must be function in the form of `func(*testexec.T, req, resp)' or `func(*testexec.T)'")
+	inType := typeOf[In]()
+	if inType.Kind() == reflect.Chan {
+		if inType == nilChanType {
+			// noop
+		} else if inType.ChanDir() != reflect.RecvDir {
+			panic("request parameter must be recv channel")
+		}
 	}
 
-	if typ.NumIn() == 1 {
-		prg.fn = func(t *T, _ io.Reader, _ io.WriteCloser) {
-			reflect.ValueOf(f).Call([]reflect.Value{
-				reflect.ValueOf(t),
-			})
+	outType := typeOf[Out]()
+	if outType.Kind() == reflect.Chan {
+		if outType == nilChanType {
+			// noop
+		} else if outType.ChanDir() != reflect.SendDir {
+			panic("response parameter must be send channel")
 		}
-	} else {
-		inType, outType := typ.In(1), typ.In(2)
+	} else if outType.Kind() != reflect.Ptr {
+		panic("response parameter must be channel or pointer")
+	}
 
-		if inType.Kind() == reflect.Chan {
-			if inType.ChanDir() != reflect.RecvDir {
-				panic("request parameter must be recv channel")
-			}
-		}
+	prg.fn = func(t *T, in io.Reader, out io.WriteCloser) {
+		var (
+			inArg  In
+			outArg Out
+		)
 
-		if outType.Kind() == reflect.Chan {
-			if outType.ChanDir() != reflect.SendDir {
-				panic("response parameter must be send channel")
-			}
-		} else if outType.Kind() != reflect.Ptr {
-			panic("response parameter must be channel or pointer")
-		}
-
-		prg.fn = func(t *T, in io.Reader, out io.WriteCloser) {
-			inArg := reflect.New(inType).Elem()
-			switch inType.Kind() {
-			case reflect.Chan:
-				ch := reflect.MakeChan(reflect.ChanOf(reflect.BothDir, inType.Elem()), 0)
-				go func() {
-					if err := decodeValues(ch, in); err != nil {
-						panic(fmt.Sprintf("fail to decode request: %s", err))
-					}
-				}()
-
-				inArg.Set(ch)
-			default:
-				if err := decodeValues(inArg, in); err != nil {
+		switch inType.Kind() {
+		case reflect.Chan:
+			ch := makeChan[In](0)
+			setValue(&inArg, ch)
+			go func() {
+				if err := decodeValues(ch, in); err != nil {
 					panic(fmt.Sprintf("fail to decode request: %s", err))
 				}
+			}()
+		default:
+			if err := decodeSingle(&inArg, in); err != nil {
+				panic(fmt.Sprintf("fail to decode request: %s", err))
 			}
+		}
 
-			switch outType.Kind() {
-			case reflect.Chan:
-				done := make(chan struct{})
-				ch := reflect.MakeChan(reflect.ChanOf(reflect.BothDir, outType.Elem()), 0)
-				go func() {
-					if err := encodeValues(ch, out); err != nil {
-						panic(fmt.Sprintf("fail to encode response: %s", err))
-					}
-					close(done)
-				}()
-
-				outArg := reflect.New(outType).Elem()
-				outArg.Set(ch)
-
-				reflect.ValueOf(f).Call([]reflect.Value{
-					reflect.ValueOf(t), inArg, outArg,
-				})
-				ch.Close()
-				<-done
-
-			case reflect.Ptr:
-				outArg := reflect.New(outType.Elem())
-				reflect.ValueOf(f).Call([]reflect.Value{
-					reflect.ValueOf(t), inArg, outArg,
-				})
-				if err := encodeValues(outArg, out); err != nil {
+		switch outType.Kind() {
+		case reflect.Chan:
+			done := make(chan struct{})
+			ch := makeChan[Out](0)
+			setValue(&outArg, ch)
+			go func() {
+				if err := encodeValues(ch, out); err != nil {
 					panic(fmt.Sprintf("fail to encode response: %s", err))
 				}
+				close(done)
+			}()
+
+			f(t, inArg, outArg)
+			ch.Close()
+			<-done
+
+		case reflect.Ptr:
+			setValue(&outArg, reflect.New(outType.Elem()))
+			f(t, inArg, outArg)
+			if err := encodeSingle(outArg, out); err != nil {
+				panic(fmt.Sprintf("fail to encode response: %s", err))
 			}
 		}
 	}
 	programs[key] = prg
 
-	return ProgramHandle(key)
+	return ProgramHandle[In, Out](key)
 }
 
-func (c ProgramHandle) exec(ctx context.Context, request, response interface{}, args []string) *Cmd {
+func (c ProgramHandle[In, Out]) exec(ctx context.Context, request In, response Out, args []string) *Cmd {
 	cmd := &Cmd{ctx: ctx}
 
 	if ctx != nil {
@@ -153,14 +142,26 @@ func (c ProgramHandle) exec(ctx context.Context, request, response interface{}, 
 	cmd.closers = append(cmd.closers, inR, inW, outR, outW)
 
 	cmd.wg.Go(func() error {
-		err := encodeValues(reflect.ValueOf(request), inW)
+		var err error
+		switch typeOf[Out]().Kind() {
+		case reflect.Chan:
+			err = encodeValues(reflect.ValueOf(request), inW)
+		default:
+			err = encodeSingle(request, inW)
+		}
 		if err != nil {
 			return fmt.Errorf("fail to encode request: %w", err)
 		}
 		return nil
 	})
 	cmd.wg.Go(func() error {
-		err := decodeValues(reflect.ValueOf(response), outR)
+		var err error
+		switch typeOf[Out]().Kind() {
+		case reflect.Chan:
+			err = decodeValues(reflect.ValueOf(response), outR)
+		default:
+			err = decodeSingle(&response, outR)
+		}
 		if err != nil {
 			return fmt.Errorf("fail to decode response: %w", err)
 		}

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var panicPrg = NewProgram(func(t *T) {
+var panicPrg = NewProgram(func(t *T, in, out Nil) {
 	panic("")
 })
 
@@ -16,7 +16,7 @@ func TestBasic(t *testing.T) {
 	assert.Error(t, cmd.Run())
 }
 
-var flagPrg = NewProgram(func(t *T) {
+var flagPrg = NewProgram(func(t *T, in, out Nil) {
 	var f = flag.Int64("my", 1, "")
 	flag.Parse()
 	assert.Equal(t, *f, int64(123))
@@ -26,7 +26,7 @@ func TestArgs(t *testing.T) {
 	Run(t, flagPrg, nil, nil, "--my=123")
 }
 
-var errorPrg = NewProgram(func(t *T) {
+var errorPrg = NewProgram(func(t *T, in, out Nil) {
 	assert.Fail(t, "fail")
 }, WithName("error program"))
 

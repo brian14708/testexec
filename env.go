@@ -6,18 +6,18 @@ import (
 	"testing"
 )
 
-func Run(t testing.TB, prg ProgramHandle, req, resp interface{}, args ...string) {
+func Run[In, Out any](t testing.TB, prg ProgramHandle[In, Out], req In, resp Out, args ...string) {
 	err := CommandContext(t, prg, nil, req, resp, args...).Run()
 	if err != nil {
 		t.Errorf("program execute failed: %s", err)
 	}
 }
 
-func Command(t testing.TB, prg ProgramHandle, req, resp interface{}, args ...string) *Cmd {
+func Command[In, Out any](t testing.TB, prg ProgramHandle[In, Out], req In, resp Out, args ...string) *Cmd {
 	return CommandContext(t, prg, nil, req, resp, args...)
 }
 
-func CommandContext(t testing.TB, prg ProgramHandle, ctx context.Context, req, resp interface{}, args ...string) *Cmd {
+func CommandContext[In, Out any](t testing.TB, prg ProgramHandle[In, Out], ctx context.Context, req In, resp Out, args ...string) *Cmd {
 	if !calledFromMain {
 		panic("to use testexec.Main must be called")
 	}

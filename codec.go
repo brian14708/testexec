@@ -9,27 +9,17 @@ import (
 	"reflect"
 )
 
-func decodeValues(v reflect.Value, r io.Reader) error {
-	if !v.IsValid() {
-		// discard value
-		_, err := io.Copy(ioutil.Discard, r)
-		if errors.Is(err, os.ErrClosed) {
-			return nil
-		}
-		return err
+func discard(r io.Reader) error {
+	_, err := io.Copy(ioutil.Discard, r)
+	if errors.Is(err, os.ErrClosed) {
+		return nil
 	}
+	return err
+}
 
-	if v.Type().Kind() != reflect.Chan {
-		dec := gob.NewDecoder(r)
-		if err := dec.DecodeValue(v); err != nil {
-			return err
-		}
-
-		var tmp struct{}
-		if err := dec.Decode(&tmp); errors.Is(err, io.EOF) || errors.Is(err, os.ErrClosed) {
-			return nil
-		}
-		return errors.New("too many values to decode, expect EOF")
+func decodeValues(v reflect.Value, r io.Reader) error {
+	if v.IsNil() {
+		return discard(r)
 	}
 
 	dec := gob.NewDecoder(r)
@@ -46,16 +36,21 @@ func decodeValues(v reflect.Value, r io.Reader) error {
 	}
 }
 
-func encodeValues(v reflect.Value, w io.WriteCloser) error {
-	if !v.IsValid() {
-		return w.Close()
+func decodeSingle[T any](v *T, r io.Reader) error {
+	dec := gob.NewDecoder(r)
+	if err := dec.Decode(v); err != nil {
+		return err
 	}
 
-	if v.Type().Kind() != reflect.Chan {
-		if err := gob.NewEncoder(w).EncodeValue(v); err != nil {
-			w.Close()
-			return err
-		}
+	var tmp struct{}
+	if err := dec.Decode(&tmp); errors.Is(err, io.EOF) || errors.Is(err, os.ErrClosed) {
+		return nil
+	}
+	return errors.New("too many values to decode, expect EOF")
+}
+
+func encodeValues(v reflect.Value, w io.WriteCloser) error {
+	if v.IsNil() {
 		return w.Close()
 	}
 
@@ -71,4 +66,12 @@ func encodeValues(v reflect.Value, w io.WriteCloser) error {
 			return err
 		}
 	}
+}
+
+func encodeSingle[T any](v T, w io.WriteCloser) error {
+	if err := gob.NewEncoder(w).Encode(v); err != nil {
+		w.Close()
+		return err
+	}
+	return w.Close()
 }
