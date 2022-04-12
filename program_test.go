@@ -16,8 +16,8 @@ func TestEmbeddedProgram(t *testing.T) {
 	})
 }
 
-var repReqPrg = NewProgram(func(t *T, in *int, out *int) {
-	*out = *in * 2
+var repReqPrg = NewProgram(func(t *T, in int, out *int) {
+	*out = in * 2
 })
 
 func TestRepReq(t *testing.T) {

@@ -18,10 +18,10 @@ func TestMain(m *testing.M) {
 Add subprocess program:
 
 ```go
-var flagProgram = testexec.NewProgram(func(t *testexec.T, in *int, out *int) {
+var flagProgram = testexec.NewProgram(func(t *testexec.T, in int, out *int) {
 	var f = flag.Int("data", 1, "")
 	flag.Parse()
-	*out = *in + *f
+	*out = in + *f
 })
 ```
 
