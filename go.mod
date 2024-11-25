@@ -3,7 +3,7 @@ module github.com/brian14708/testexec
 go 1.18
 
 require (
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	golang.org/x/sync v0.9.0
 )
 
