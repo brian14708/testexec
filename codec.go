@@ -4,13 +4,12 @@ import (
 	"encoding/gob"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"reflect"
 )
 
 func discard(r io.Reader) error {
-	_, err := io.Copy(ioutil.Discard, r)
+	_, err := io.Copy(io.Discard, r)
 	if errors.Is(err, os.ErrClosed) {
 		return nil
 	}
