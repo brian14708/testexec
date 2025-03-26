@@ -25,8 +25,8 @@ func CommandContext[In, Out any](t testing.TB, prg ProgramHandle[In, Out], ctx c
 	cmd := prg.exec(ctx, req, resp, args)
 
 	t.Cleanup(func() {
-		if cmd.Cmd.Process != nil {
-			_ = cmd.Cmd.Process.Signal(syscall.SIGTERM)
+		if cmd.Process != nil {
+			_ = cmd.Process.Signal(syscall.SIGTERM)
 		}
 		_ = cmd.Cmd.Wait()
 	})

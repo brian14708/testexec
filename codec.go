@@ -61,7 +61,7 @@ func encodeValues(v reflect.Value, w io.WriteCloser) error {
 		}
 
 		if err := enc.EncodeValue(el); err != nil {
-			w.Close()
+			_ = w.Close()
 			return err
 		}
 	}
@@ -69,7 +69,7 @@ func encodeValues(v reflect.Value, w io.WriteCloser) error {
 
 func encodeSingle[T any](v T, w io.WriteCloser) error {
 	if err := gob.NewEncoder(w).Encode(v); err != nil {
-		w.Close()
+		_ = w.Close()
 		return err
 	}
 	return w.Close()

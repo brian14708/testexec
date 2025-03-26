@@ -126,19 +126,19 @@ func (c ProgramHandle[In, Out]) exec(ctx context.Context, request In, response O
 		cmd.Cmd = exec.Command(os.Args[0], args...)
 	}
 
-	cmd.Cmd.Env = append(os.Environ(), envKey+"="+string(c))
+	cmd.Env = append(os.Environ(), envKey+"="+string(c))
 	if wd, err := os.Getwd(); err == nil {
-		cmd.Cmd.Dir = wd
+		cmd.Dir = wd
 	}
-	cmd.Cmd.Stderr = os.Stderr
-	cmd.Cmd.Stdout = os.Stdout
-	cmd.Cmd.SysProcAttr = &syscall.SysProcAttr{
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Pdeathsig: syscall.SIGTERM,
 	}
 
 	inR, inW, _ := os.Pipe()
 	outR, outW, _ := os.Pipe()
-	cmd.Cmd.ExtraFiles = []*os.File{inR, outW}
+	cmd.ExtraFiles = []*os.File{inR, outW}
 	cmd.closers = append(cmd.closers, inR, inW, outR, outW)
 
 	cmd.wg.Go(func() error {
@@ -176,8 +176,10 @@ func Main(m *testing.M) {
 	if key := os.Getenv(envKey); key != "" {
 		inPipe := os.NewFile(uintptr(3), "")
 		outPipe := os.NewFile(uintptr(4), "")
-		defer inPipe.Close()
-		defer outPipe.Close()
+		defer func() {
+			_ = inPipe.Close()
+			_ = outPipe.Close()
+		}()
 
 		prg, ok := programs[key]
 		if !ok {

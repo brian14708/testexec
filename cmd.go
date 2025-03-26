@@ -18,7 +18,7 @@ type Cmd struct {
 func (c *Cmd) Wait() error {
 	err := c.Cmd.Wait()
 	for _, c := range c.closers {
-		c.Close()
+		_ = c.Close()
 	}
 	c.closers = nil
 
@@ -35,7 +35,7 @@ func (c *Cmd) Wait() error {
 }
 
 func (c *Cmd) Run() error {
-	if err := c.Cmd.Start(); err != nil {
+	if err := c.Start(); err != nil {
 		return err
 	}
 	return c.Wait()
