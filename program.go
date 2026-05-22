@@ -63,7 +63,7 @@ func NewProgram[In any, Out any](f func(*T, In, Out), opts ...ProgramOption) Pro
 		} else if outType.ChanDir() != reflect.SendDir {
 			panic("response parameter must be send channel")
 		}
-	} else if outType.Kind() != reflect.Ptr {
+	} else if outType.Kind() != reflect.Pointer {
 		panic("response parameter must be channel or pointer")
 	}
 
@@ -104,7 +104,7 @@ func NewProgram[In any, Out any](f func(*T, In, Out), opts ...ProgramOption) Pro
 			ch.Close()
 			<-done
 
-		case reflect.Ptr:
+		case reflect.Pointer:
 			setValue(&outArg, reflect.New(outType.Elem()))
 			f(t, inArg, outArg)
 			if err := encodeSingle(outArg, out); err != nil {
